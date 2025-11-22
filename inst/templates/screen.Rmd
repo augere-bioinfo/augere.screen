@@ -1,0 +1,522 @@
+# Dimensionality reduction
+
+To get an overview of our dataset, we create a multi-dimensional scaling (MDS) plot.
+Samples that are closer together on the plot are more similar in their expression profiles -
+or more specifically, the most extreme log-fold changes are closer to zero.
+
+:BEGIN mds-grouped
+```{r, fig.cap="MDS plot of the dataset. Each point represents a sample and is named/colored according to its group(s) of origin."}
+mds.labels <- factor(model.data$group.)
+limma::plotMDS(y.cpm, labels=as.character(mds.labels), col=as.integer(mds.labels))
+```
+:END
+:BEGIN mds-ungrouped
+```{r, fig.cap="MDS plot of the dataset. Each point represents a sample."}
+limma::plotMDS(y.cpm)
+```
+:END
+
+# Model fitting
+
+voom uses the empirical mean-variance trend to compute a weight for each observation. 
+In this manner, log-CPMs derived from low counts are downweighted to reflect their lower precision.
+:BEGIN quality-text
+We estimate sample-specific quality weights to reduce the impact of outlier replicates without resorting to their removal.
+:END
+:BEGIN duplicate-correlation
+We use `duplicateCorrelation()` to account for correlations between samples with the same level of blocking factor.
+
+```{r duplicate-correlation, fig.wide=TRUE}
+library(limma)
+dc.block <- factor(SummarizedExperiment::colData(se)[[<%= DUPCOR_BLOCK %>]])
+
+# Iteratively refine the precision weights after estimating the correlation. 
+v <- limma::<%= VOOM_CMD %>(y, design=design, plot=FALSE)
+dc <- limma::duplicateCorrelation(v, design=design, block=dc.block)
+v <- limma::<%= VOOM_CMD %>(y, design=design, plot=TRUE, block=dc.block, 
+    correlation=dc$consensus.correlation)
+dc <- limma::duplicateCorrelation(v, design=design, block=dc.block)
+
+dc$consensus.correlation
+```
+:END
+
+:BEGIN voom
+```{r voom}
+library(limma)
+v <- limma::<%= VOOM_CMD %>(y, design=design, plot=TRUE)
+```
+:END
+
+Once the precision weights are computed, we fit the linear model for each barcode. 
+
+```{r}
+# 'v' stores 'design' so we don't need to explicitly pass it.
+fit <- limma::lmFit(v<%= LM_OPTS %>)
+```
+
+Empirical Bayes shrinkage shares information across barcodes to stabilize the variance estimates.
+The estimated prior degrees of freedom (d.f.) represents the variability of the variances across barcodes, typically ranging from 5 to 20.
+Large values indicate that the variances were consistent across features, allowing us to perform more aggressive shrinkage for greater power.
+:BEGIN robust-text
+We enable robustification to ensure that highly variable barcodes (or very small variances at discrete low counts) do not deflate the prior degrees of freedom.
+:END
+
+```{r}
+fit <- limma::eBayes(fit<%= EB_OPTS %>)
+summary(fit$df.prior)
+```
+
+We examine the mean-variance relationship for the shrunk estimates.
+Ideally, there should be no trend at all as it should have been handled by the observation weights.
+
+```{r, fig.cap="Residual standard deviation (sigma) plotted against the mean log-CPM. Each point represents a barcode<%= EXTRA_EB_CAPT %>."}
+limma::plotSA(fit)
+```
+
+# Performing contrasts
+
+## Setup 
+
+We define a list to hold the barcode-result from each contrast.
+
+```{r}
+all.barcodes <- list()
+```
+
+We create a directory in which to save the results to disk.
+
+```{r save-directory}
+result.dir <- "results"
+dir.create(result.dir)
+```
+
+:BEGIN gene-output
+Setting up lists to hold results at the gene level:
+
+```{r}
+:BEGIN init-simes
+all.simes <- list()
+:END
+:BEGIN init-holm-min
+all.holm.min <- list()
+:END
+:BEGIN init-fry
+all.fry <- list()
+:END
+```
+
+Also defining some common variables for gene-level statistics.
+
+```{r}
+gene.ids <- SummarizedExperiment::rowData(se)[[<%= GENE_FIELD %>]]
+all.genes <- sort(unique(gene.ids))
+:BEGIN create-gene-annotation
+extra.gene.data <- SummarizedExperiment::rowData(se)[match(all.genes, gene.ids),<%= ROW_DATA_FIELDS %>,drop=FALSE]
+:END
+:BEGIN create-fry-indices
+gene.indices <- split(seq_along(v$genes$origin), gene.ids[v$genes$origin])
+:END
+```
+:END
+
+:BEGIN create-common-metadata
+We also set up some extra metadata to add to each result.
+
+```{r}
+common.meta <- <%= COMMON_METADATA %>
+```
+:END
+
+:BEGIN contrast
+
+## <%= CONTRAST_NAME_SIMPLE %>
+
+### Testing each barcode
+
+We set up the contrast, a vector specifying the null hypothesis in terms of the design matrix's coefficients.
+(This may also be a matrix where the joint null is defined from the hypotheses for the individual columns.)
+
+```{r}
+:BEGIN contrast-command
+:END
+con
+```
+
+:BEGIN lfc-contrast
+For single contrasts, we can focus on barcodes with larger effect sizes by using `treat()` to test for significant differences from a log-fold change threshold.
+
+```{r}
+fit2 <- limma::contrasts.fit(fit, con)
+fit2 <- limma::treat(fit2, lfc=<%= LFC_THRESHOLD %><%= EB_OPTS %>)
+```
+:END
+
+:BEGIN no-lfc-contrast
+We perform moderated $t$-tests to identify significant deviations from the null hypothesis.
+
+```{r}
+fit2 <- limma::contrasts.fit(fit, con)
+fit2 <- limma::eBayes(fit2<%= EB_OPTS %>)
+```
+:END
+
+We retrieve a table of per-barcode DE statistics:
+
+```{r}
+tab <- limma::topTable(fit2, n=Inf, sort.by="none")
+tab[head(order(tab$P.Value)),]
+```
+
+We report summary statistics for this comparison, defining significant differences at a FDR threshold of 5%.
+
+```{r, eval=is.null(dim(con)), echo=is.null(dim(con))}
+summary(limma::decideTests(fit2))
+```
+
+```{r, eval=!is.null(dim(con)), echo=!is.null(dim(con))}
+summary(tab$FDR <= 0.05)
+```
+
+Now making some diagnostic plots.
+
+```{r, fig.cap='Mean-difference plot for this contrast. Each point represents a gene and is colored according to whether it was significantly up- or down-regulated at an FDR of 5%.', eval=is.null(dim(con)), echo=is.null(dim(con))}
+limma::plotMD(fit2, status=limma::decideTests(fit2), hl.cex=0.5)
+```
+
+```{r, fig.cap='Volcano plot for this contrast. Each point represents a barcode, colored according to whether it was significantly up- or down-regulated at an FDR of 5%. The dotted line represents the effective $p$-value threshold for significance.', eval=is.null(dim(con)), echo=is.null(dim(con))}
+limma::volcanoplot(fit2)
+is.de <- tab$FDR <= 0.05
+if (any(is.de, na.rm=TRUE)) {
+    eff.thresh <- max(tab$PValue[is.de], na.rm=TRUE)
+    abline(h=-log10(eff.thresh), lty=2, col='red')
+}
+```
+
+We expand the result table to restore the full set of rows in our original `SummarizedExperiment`.
+Low-abundance barcodes are assigned `NA` statistics, to distinguish them from barcodes that were not present in the annotation at all.
+
+```{r}
+barcode.df <- S4Vectors::DataFrame(tab)
+barcode.df <- barcode.df[match(seq_len(nrow(se)), barcode.df$origin),]
+barcode.df$origin <- NULL
+rownames(barcode.df) <- rownames(se)
+:BEGIN attach-rowdata
+barcode.df <- cbind(SummarizedExperiment::rowData(se)[,<%= ROWDATA_FIELDS %>,drop=FALSE], barcode.df)
+:END
+```
+
+We also give nicer names to some of the columns: 
+de
+```{r}
+colnames(barcode.df)[colnames(barcode.df) == "P.Value"] <- "PValue"
+colnames(barcode.df)[colnames(barcode.df) == "adj.P.Val"] <- "FDR"
+```
+
+```{r, eval=is.null(dim(con)), echo=is.null(dim(con))}
+colnames(barcode.df)[colnames(barcode.df) == "logFC"] <- "LogFC"
+```
+
+```{r, eval=!is.null(dim(con)), echo=!is.null(dim(con))}
+expected <- make.names(colnames(con))
+m <- match(expected, colnames(barcode.df))
+stopifnot(!anyNA(m), !anyDuplicated(m))
+colnames(barcode.df)[m] <- paste0("LogFC.", colnames(con))
+```
+
+We store the results in our output list.
+
+```{r}
+all.barcodes[[<%= CONTRAST_NAME_DEPARSED %>]] <- barcode.df
+```
+
+We also save them to file with some metadata describing what's going on.
+
+```{r <%= SAVING_CHUNK_NAME %>}
+barcode.meta <- list(
+    title=paste(<%= CONTRAST_NAME_DEPARSED %>, "(barcode)"),
+    authors=<%= AUTHOR %>,
+    type="differential_barcode_abundance",
+    differential_barcode_abundance=list(
+:BEGIN diff-metadata
+:END
+:BEGIN subset-metadata
+        subset=subset.meta,
+:END
+        normalization=norm.meta,
+        method="voom-limma"
+    )
+)
+
+augere.core::saveResult(
+    barcode.df,
+    file.path(result.dir, paste0("barcode-", length(all.barcodes))),
+:BEGIN merge-metadata
+    metadata=c(common.meta, barcode.meta)
+:END
+:BEGIN no-merge-metadata
+    metadata=barcode.meta
+:END
+)
+```
+
+:BEGIN simes
+### Consolidation with Simes 
+
+We consolidate the barcode-level statistics into gene-level results using Simes' method.
+Here, the null hypothesis is that all barcodes for a gene are not differentially abundant.
+This is the most sensitive consolidation method as it can be rejected if any barcode is sufficiently significant.
+
+```{r}
+simes.res <- <%= SIMES_CMD %>
+simes.res <- simes.res[match(all.genes, rownames(simes.res)),,drop=FALSE]
+:BEGIN gene-annotation
+simes.res <- cbind(extra.gene.data, simes.res)
+:END
+rownames(simes.res) <- all.genes
+```
+
+We look at the top genes: 
+
+```{r}
+head(simes.res[order(simes.res$PValue),])
+```
+
+We look at the number of significant genes: 
+
+```{r, eval=is.null(dim(con)), echo=is.null(dim(con))}
+table(Significant=simes.res$FDR <= 0.05, Direction=simes.res$Direction)
+```
+
+```{r, eval=!is.null(dim(con)), echo=!is.null(dim(con))}
+table(Significant=holm.res$FDR <= 0.05)
+```
+
+We add it into our list of results.
+
+```{r}
+all.simes[[<%= CONTRAST_NAME_DEPARSED %>]] <- simes.res
+```
+
+We also save them to file with some metadata. 
+
+```{r <%= SAVING_CHUNK_NAME %>}
+simes.meta <- list(
+    title=paste0(<%= CONTRAST_NAME_DEPARSED %>, "(Simes)"),
+    authors=<%= AUTHOR %>,
+    type="differential_gene_abundance",
+    differential_gene_abundance=list(
+:BEGIN diff-metadata
+:END 
+:BEGIN subset-metadata
+        subset=subset.meta,
+:END
+        normalization=norm.meta,
+        method="simes"
+    )
+)
+
+augere.core::saveResult(
+    simes.res, 
+    file.path(result.dir, paste0("simes-", length(all.simes))),
+:BEGIN merge-metadata
+    metadata=c(common.meta, simes.meta)
+:END
+:BEGIN no-merge-metadata
+    metadata=simes.meta
+:END
+)
+```
+:END
+
+:BEGIN fry
+### Consolidation with `fry`
+
+We consolidate barcode-level statistics into gene-level results using the `fry` method.
+This re-uses `r BiocStyle::Biocpkg("limma")`'s tests to perform a self-contained "barcode set".
+Here, the null hypothesis is that no barcodes for a given gene are differentially abundant,
+though a low `fry` $p$-value typically requires a significant change in most barcodes for a gene.
+
+```{r}
+fry.res <- limma::fry(
+    v,
+    index=gene.indices,
+    design=design,
+    contrast=con<%= FRY_OPTS %>
+)
+
+# Cleaning up the output.
+fry.res <- S4Vectors::DataFrame(fry.res)
+colnames(fry.res)[colnames(fry.res) == "NGenes"] <- "NumBarcodes"
+fry.res$Direction <- tolower(fry.res$Direction)
+fry.res <- fry.res[match(all.genes, rownames(fry.res)),,drop=FALSE]
+fry.res[is.na(fry.res$NumBarcodes)] <- 0L
+:BEGIN gene-annotation
+fry.res <- cbind(extra.gene.data, fry.res)
+:END
+rownames(fry.res) <- all.genes
+```
+
+We look at the top features after consolidation.
+
+```{r}
+head(fry.res[order(fry.res$PValue),])
+```
+
+We look at the number of significant genes in each direction:
+
+```{r}
+table(Significant=fry.res$FDR <= 0.05, Direction=fry.res$Direction)
+```
+
+We then save it into our list of results.
+
+```{r}
+all.fry[[<%= CONTRAST_NAME_DEPARSED %>]] <- fry.res
+```
+
+We also save them to file with some metadata. 
+
+```{r <%= SAVING_CHUNK_NAME %>}
+fry.meta <- list(
+    title=paste0(<%= CONTRAST_NAME_DEPARSED %>, "(fry)"),
+    authors=<%= AUTHOR %>,
+    type="differential_gene_abundance",
+    differential_gene_abundance=list(
+:BEGIN diff-metadata
+:END 
+:BEGIN subset-metadata
+        subset=subset.meta,
+:END
+        normalization=norm.meta,
+        method="fry"
+    )
+)
+
+augere.core::saveResult(
+    fry.res, 
+    file.path(result.dir, paste0("fry-", length(all.fry))),
+:BEGIN merge-metadata
+    metadata=c(common.meta, fry.meta)
+:END
+:BEGIN no-merge-metadata
+    metadata=fry.meta
+:END
+)
+```
+:END
+
+:BEGIN holm-min
+### Consolidation with Holm
+
+The "minimum Holm" method tests the null hypothesis that fewer than $k$ barcodes for a gene are differentially abundant.
+$k$ is defined as the larger of some minimum value and a proportion of the total number of barcodes for a gene.
+This guarantees that some proportion of barcodes is significant for each gene.
+
+```{r}
+holm.res <- <%= HOLM_CMD %>
+holm.res <- holm.res[match(all.genes, rownames(holm.res)),,drop=FALSE]
+:BEGIN gene-annotation
+holm.res <- cbind(extra.gene.data, holm.res)
+:END
+rownames(holm.res) <- all.genes
+```
+
+We look at the top features after consolidation.
+
+```{r}
+head(holm.res[order(holm.res$PValue),])
+```
+
+We look at the number of significant genes: 
+
+```{r, eval=is.null(dim(con)), echo=is.null(dim(con))}
+table(Significant=holm.res$FDR <= 0.05, Direction=holm.res$Direction)
+```
+
+```{r, eval=!is.null(dim(con)), echo=!is.null(dim(con))}
+table(Significant=holm.res$FDR <= 0.05)
+```
+
+We then save it into our list of results.
+
+```{r}
+all.holm.min[[<%= CONTRAST_NAME_DEPARSED %>]] <- holm.res
+```
+
+We also save them to file with some metadata. 
+
+```{r <%= SAVING_CHUNK_NAME %>}
+holm.meta <- list(
+    title=paste0(<%= CONTRAST_NAME_DEPARSED %>, "(Holm)"),
+    authors=<%= AUTHOR %>,
+    type="differential_gene_abundance",
+    differential_gene_abundance=list(
+:BEGIN diff-metadata
+:END 
+:BEGIN subset-metadata
+        subset=subset.meta,
+:END
+        normalization=norm.meta,
+        method="holm"
+    )
+)
+
+augere.core::saveResult(
+    holm.res, 
+    file.path(result.dir, paste0("holm-", length(all.holm.min))),
+:BEGIN merge-metadata
+    metadata=c(common.meta, holm.meta)
+:END
+:BEGIN no-merge-metadata
+    metadata=holm.meta
+:END
+)
+```
+:END
+
+:END
+
+# Computing normalized values
+
+We create a `SummarizedExperiment` that contains the log-normalized expression values.
+This is useful for visualizing the expression profiles of the barcodes of interest.
+
+```{r}
+normalized <- se
+SummarizedExperiment::rowData(normalized)$retained <- seq_len(nrow(normalized)) %in% y$genes$origin
+normalized$lib.size <- y$samples$lib.size
+normalized$norm.factors <- y$samples$norm.factors
+
+counts <- SummarizedExperiment::assay(normalized, <%= ASSAY %>)
+sf <- normalized$lib.size * normalized$norm.factors
+sf <- sf/mean(sf)
+SummarizedExperiment::assay(normalized, "logcounts") <- log1p(t(t(counts) / sf))
+```
+
+And we save it.
+
+```{r save-norm}
+norm.meta <- list(
+    title='Normalized barcode data',
+    authors=<%= AUTHOR %>,
+    type="summarized_experiment"
+)
+
+augere.core::saveResult(
+    normalized,
+    file.path(result.dir, "normalized"), 
+:BEGIN merge-metadata
+    metadata=c(common.meta, norm.meta)
+:END
+:BEGIN no-merge-metadata
+    metadata=norm.meta
+:END
+)
+```
+
+# Session information {-}
+
+```{r}
+sessionInfo()
+```

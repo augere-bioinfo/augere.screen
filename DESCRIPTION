@@ -1,0 +1,25 @@
+Package: augere.screen
+Version: 0.99.0
+Date: 2025-11-12
+Title: Automatic Generation of Functional Screen Analyses
+Description:
+    Implements pipelines for generating functional screen analysis reports in the augere framework.
+    This uses voom to test for differential abundance of barcodes with consolidation into gene-level statistics.
+Authors@R: person("Aaron", "Lun", role=c("cre", "aut"), email="infinite.monkeys.with.keyboards@gmail.com")
+License: MIT + file LICENSE
+Imports:
+    stats,
+    limma,
+    edgeR,
+    metapod,
+    S4Vectors,
+    augere.core,
+    augere.de
+Suggests:
+    testthat,
+    knitr,
+    rmarkdown,
+    BiocStyle
+VignetteBuilder: knitr    
+RoxygenNote: 7.3.3
+Encoding: UTF-8
