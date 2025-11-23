@@ -18,7 +18,11 @@ test_that("generateSummaryCommands works properly if we know it's signed", {
     expect_identical(names(by.gene), rownames(out))
     expect_type(out$NumUp, "integer")
     expect_type(out$NumDown, "integer")
+
     expect_true(all(out$NumUp + out$NumDown <= lengths(by.gene)))
+    expect_gt(sum(res$FDR <= 0.05), 0) # check that we're actually testing something.
+    expect_identical(sum(out$NumUp) + sum(out$NumDown), sum(res$FDR <= 0.05))
+
     expect_type(out$LogFC, "double")
     expect_false(anyNA(out$LogFC))
 })
@@ -41,6 +45,7 @@ test_that("generateSummaryCommands works properly if it might be signed", {
     out <- eval(parse(text=cmds), envir=env)
     expect_type(out$NumSig, "integer")
     expect_true(all(out$NumSig <= lengths(by.gene)))
+    expect_identical(sum(out$NumSig), sum(res$FDR <= 0.05))
 })
 
 test_that("generateSummaryCommands works properly after sprinkling in some NAs", {
