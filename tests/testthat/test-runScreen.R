@@ -21,7 +21,7 @@ test_that("runScreen works with defaults, no genes", {
     expect_identical(rownames(res$barcode[[1]]), rownames(se))
     expect_type(res$barcode[[1]]$PValue, "double")
     expect_type(res$barcode[[1]]$LogFC, "double")
-    expect_type(res$barcode[[1]]$AveExpr, "double")
+    expect_type(res$barcode[[1]]$AveAb, "double")
     expect_type(res$barcode[[1]]$FDR, "double")
 
     roundtrip <- augere.core::readResult(file.path(output, "results", "barcode-1"))

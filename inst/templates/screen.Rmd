@@ -217,8 +217,9 @@ barcode.df <- cbind(SummarizedExperiment::rowData(se)[,<%= ROWDATA_FIELDS %>,dro
 ```
 
 We also give nicer names to some of the columns: 
-de
+
 ```{r}
+colnames(barcode.df)[colnames(barcode.df) == "AveExpr"] <- "AveAb"
 colnames(barcode.df)[colnames(barcode.df) == "P.Value"] <- "PValue"
 colnames(barcode.df)[colnames(barcode.df) == "adj.P.Val"] <- "FDR"
 ```

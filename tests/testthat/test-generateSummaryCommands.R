@@ -1,7 +1,7 @@
 # library(testthat); library(augere.screen); source("test-generateSummaryCommands.R")
 
 set.seed(123123)
-res <- S4Vectors::DataFrame(PValue = rbeta(1000, 1, 20), LogFC = rnorm(1000))
+res <- S4Vectors::DataFrame(PValue = rbeta(1000, 1, 20), LogFC = rnorm(1000), AveAb = rnorm(1000))
 res$FDR <- p.adjust(res$PValue, method="BH")
 genes <- sample(LETTERS, nrow(res), replace=TRUE)
 by.gene <- split(seq_along(genes), genes)
@@ -25,6 +25,11 @@ test_that("generateSummaryCommands works properly if we know it's signed", {
 
     expect_type(out$LogFC, "double")
     expect_false(anyNA(out$LogFC))
+    expect_true(all(unlist(mapply(function(i, v) v %in% res$LogFC[i], by.gene, out$LogFC))))
+
+    expect_type(out$AveAb, "double")
+    expect_false(anyNA(out$AveAb))
+    expect_true(all(unlist(mapply(function(i, v) v %in% res$AveAb[i], by.gene, out$AveAb))))
 })
 
 test_that("generateSummaryCommands works properly if it might be signed", {
@@ -43,9 +48,15 @@ test_that("generateSummaryCommands works properly if it might be signed", {
     res$LogFC <- NULL
     env$FOO <- res
     out <- eval(parse(text=cmds), envir=env)
+
+    expect_identical(names(by.gene), rownames(out))
     expect_type(out$NumSig, "integer")
     expect_true(all(out$NumSig <= lengths(by.gene)))
     expect_identical(sum(out$NumSig), sum(res$FDR <= 0.05))
+
+    expect_type(out$AveAb, "double")
+    expect_false(anyNA(out$AveAb))
+    expect_true(all(unlist(mapply(function(i, v) v %in% res$AveAb[i], by.gene, out$AveAb))))
 })
 
 test_that("generateSummaryCommands works properly after sprinkling in some NAs", {
@@ -54,6 +65,7 @@ test_that("generateSummaryCommands works properly after sprinkling in some NAs",
     fail[genes == scapegoat] <- TRUE
     fail[sample(nrow(res), 20)] <- TRUE
     res$PValue[fail] <- NA
+    res$AveAb[fail] <- NA
     res$FDR[fail] <- NA
     res$LogFC[fail] <- NA
 
@@ -69,6 +81,7 @@ test_that("generateSummaryCommands works properly after sprinkling in some NAs",
         expect_identical(out[scapegoat,"NumUp"], 0L)
         expect_identical(out[scapegoat,"NumDown"], 0L)
         expect_true(is.na(out[scapegoat,"LogFC"]))
+        expect_true(is.na(out[scapegoat,"AveAb"]))
 
         env <- new.env()
         env$FOO <- res[!fail,]
@@ -92,6 +105,7 @@ test_that("generateSummaryCommands works properly after sprinkling in some NAs",
         out <- eval(parse(text=cmds), envir=env)
         expect_false(anyNA(out$NumSig))
         expect_identical(out[scapegoat,"NumSig"], 0L)
+        expect_true(is.na(out[scapegoat,"AveAb"]))
 
         env <- new.env()
         env$FOO <- res0[!fail,]

@@ -61,7 +61,7 @@
 #' Each DataFrame corresponds to a comparison/contrast where each row corresponds to a barcode (i.e., row) in \code{se}.
 #' Each DataFrame contains the following columns:
 #' \itemize{
-#' \item \code{AveExpr}, the average abundance.
+#' \item \code{AveAb}, the average abundance.
 #' \item \code{t}, the t-statistic.
 #' (For non-ANOVA-like contrasts only.)
 #' \item \code{F}, the F-statistic.
@@ -90,6 +90,7 @@
 #' (For non-ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
 #' \item \code{NumSig}, the number of significant barcodes.
 #' (For ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
+#' \item \code{AveAb}, the average abundance of the barcode with the lowest p-value.
 #' }
 #' Only reported if \code{gene.field} is not \code{NULL}.
 #' \item \code{normalized}, a copy of \code{x} with normalized abundance values, possibly subsetted by sample.

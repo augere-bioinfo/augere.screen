@@ -10,7 +10,7 @@
 
     signed.cmds <- '
     num.up <- num.down <- integer(length(by.gene))
-    lfc <- rep(NA_real_, length(by.gene))
+    ab <- lfc <- rep(NA_real_, length(by.gene))
     for (i in seq_along(by.gene)) {
         current <- by.gene[[i]]
         current.sig <- is.sig[current]
@@ -20,9 +20,10 @@
         best <- which.min(df$PValue[current])
         if (length(best)) {
             lfc[i] <- current.lfc[best]
+            ab[i] <- df$AveAb[current[best]]
         }
     }
-    S4Vectors::DataFrame(row.names=names(by.gene), NumUp=num.up, NumDown=num.down, LogFC=lfc)
+    S4Vectors::DataFrame(row.names=names(by.gene), NumUp=num.up, NumDown=num.down, LogFC=lfc, AveAb=ab)
 '
 
     if (has.LogFC) {
@@ -34,12 +35,17 @@
     <%= PAYLOAD %>
     } else {
         num.sig <- integer(length(by.gene))
+        ab <- rep(NA_real_, length(by.gene))
         for (i in seq_along(by.gene)) {
             current <- by.gene[[i]]
             current.sig <- is.sig[current]
             num.sig[i] <- sum(current.sig, na.rm=TRUE)
+            best <- which.min(df$PValue[current])
+            if (length(best)) {
+                ab[i] <- df$AveAb[current[best]]
+            }
         }
-        S4Vectors::DataFrame(row.names=names(by.gene), NumSig=num.sig)
+        S4Vectors::DataFrame(row.names=names(by.gene), NumSig=num.sig, AveAb=ab)
     }
 '
 
