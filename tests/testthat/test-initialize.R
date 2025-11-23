@@ -2,7 +2,7 @@
 
 library(SummarizedExperiment)
 cd <- DataFrame(group = rep(LETTERS[1:4], each=5), age=1:20, batch=factor(rep(1:5, 4)))
-means <- 2^rexp(1000)
+means <- 2^runif(1000, 1, 10)
 means[1] <- 0 # to test the filtering.
 mat <- matrix(rnbinom(length(means) * nrow(cd), mu=means, size=10), nrow=length(means), ncol=nrow(cd))
 se <- SummarizedExperiment(list(counts=mat), colData=cd)

@@ -27,28 +27,28 @@
 #' @param norm.tmm Boolean indicating whether TMM normalization should be used.
 #' If \code{FALSE}, normalization is instead performed using the library size for each sample.
 #' @param gene.field String specifying the \code{rowData(se)} column that contains the gene identity for each barcode.
-#' @param method Character vector specifying the consolidation method(s) to convert per-barcode statistics into per-gene results.
+#' @param consolidation Character vector specifying the consolidation method(s) to convert per-barcode statistics into per-gene results.
 #' This can be zero, one or more of:
 #' \itemize{
 #' \item \code{"simes"}, which uses \code{\link[metapod]{groupedSimes}} to combine barcode-level p-values into a single per-gene p-value. 
 #' This is the most sensitive approach for detecting a small number of barcodes (possibly just 1) that are differentially abundant.
-#' It is appropriate for CRISPRa where very few guides are expected to succeed.
-#' It is also useful for identifying genes containing barcodes that exhibit sporadic off-target effects in CRISPR knockout or CRISPRi.
+#' Most suited for CRISPRa where few guides are expected to succeed for each gene.
+#' Also useful for studying sporadic off-target effects in CRISPR knockout or CRISPRi.
 #' \item \code{"holm-min"}, which uses \code{\link[metapod]{groupedHolmMin}} to combine barcode-level p-values into a single per-gene p-value. 
-#' This should be used when we expect a minimum number or proportion of barcodes to exhibit differential abundance for a given gene.
-#' It is suitable for CRISPR knockout screens, CRISPRi and CRISPRa.
+#' This should be used when a minimum number/proportion of barcodes for a gene is expected to exhibit differential abundance. 
+#' Suitable for all CRISPR modalities but tends to be more conservative than the other methods.
 #' \item \code{"fry"}, which uses \code{\link[limma]{fry}} to test for differential expression across all barcodes for a gene.
-#' This tends to favor consistent differences (in the same direction!) across all barcodes for a given gene, and thus is suitable for CRISPR knockout screens or CRISPRi.
-#' This method mode is not compatible with ANOVA-like contrasts and will ignore any \code{lfc.threshold > 0}.
+#' This favors consistent differences across the majority of barcodes for a given gene, and is most suited to CRISPR knockout or CRISPRi screens.
+#' not compatible with ANOVA-like contrasts and will ignore any \code{lfc.threshold > 0}.
 #' }
 #' Only used if \code{gene.field} is supplied.
 #' @param report.summary Boolean indicating whether to report barcode-level summaries within the per-gene data frames.
 #' Only used if \code{gene.field} is supplied.
 #' @param summary.threshold Number specifying the FDR threshold when summarizing the number of significant barcodes per gene.
 #' Only used if \code{report.summary=TRUE}.
-#' @param holm.min.n Integer specifying the minimum number of significant barcodes per gene when \code{method="holm"},
+#' @param holm.min.n Integer specifying the minimum number of significant barcodes per gene when \code{consolidation="holm"},
 #' see the \code{min.sig.n=} in \code{?\link[metapod]{groupedHolmMin}} for details.
-#' @param holm.min.prop Integer specifying the minimum proportion of significant barcodes per gene when \code{method="holm"},
+#' @param holm.min.prop Integer specifying the minimum proportion of significant barcodes per gene when \code{consolidation="holm"},
 #' see the \code{min.sig.prop=} in \code{?\link[metapod]{groupedHolmMin}} for details.
 #' @param fry.args Named list of additional arguments to pass to \code{\link[limma]{fry}}.
 #' @param gene.data Character vector containing the names of \code{\link[SummarizedExperiment]{rowData}(se)} columns to add to the per-gene result tables.
@@ -64,7 +64,7 @@
 #' Each DataFrame contains the following columns:
 #' \itemize{
 #' \item \code{AveExpr}, the average abundance.
-#' \item \code{t}, the F-statistic.
+#' \item \code{t}, the t-statistic.
 #' (For non-ANOVA-like contrasts only.)
 #' \item \code{F}, the F-statistic.
 #' (For ANOVA-like contrasts only.)
@@ -75,7 +75,7 @@
 #' \item \code{PValue}, the p-value;
 #' \item \code{FDR}, the Benjamini-Hochberg-adjusted p-value.
 #' }
-#' \item \code{gene}, a named list of lists containing one entry per method in \code{method}.
+#' \item \code{gene}, a named list of lists containing one entry per method in \code{consolidation}.
 #' Each inner list contains one \link[S4Vectors]{DataFrame} per contrast where each row corresponds to a gene (not barcode). 
 #' Each DataFrame contains at least the following columns:
 #' \itemize{
@@ -124,7 +124,7 @@
 #' % Fortunately, the density of barcodes at the outlier filter boundary should be so low that any biases should not be noticeable.
 #'
 #' We also use \code{\link[edgeR]{filterByExpr}} to remove low-abundance barcodes. 
-#' This ensures that all remaining barcodes have sufficient counts for \code{\link[limma]{voom}}, 
+#' This ensures that all remaining barcodes have sufficiently large counts for \code{\link[limma]{voom}}, 
 #' especially if the reference samples themselves are not used in the rest of the analysis.
 #'
 #' @section Control normalization:
@@ -135,10 +135,12 @@
 #'
 #' By default, we use TMM normalization (see \code{\link[edgeR]{calcNormFactors}}) on the control barcodes. 
 #' This avoids composition biases and provides some robustness against changes in abundance due to inadvertent biological activity.
-#' If \code{norm.use.tmm=FALSE}, we instead use the total sum of counts across the controls to derive normalization factors.
+#' If \code{norm.tmm=FALSE}, we instead use the total sum of counts across the controls to derive normalization factors.
 #' This can be more precise but is more sensitive to genuine changes in abundance.
 #'
-#' If no control barcodes are specified, normalization uses all barcodes that remaining after filtering. 
+#' If no control barcodes are specified, normalization uses all barcodes that remain after filtering.
+#' If \code{norm.tmm=TRUE}, TMM normalization is performed on all (filtered) barcodes.
+#' Otherwise, the total sum of counts across all (filtered) barcodes is used.
 #'
 #' @author Aaron Lun, Jean-Philippe Fortin
 #'
@@ -277,10 +279,12 @@ runScreen <- function(
         parsed[["mds-grouped"]] <- NULL
     }
 
+    lm.args <- character(0)
     if (!is.null(dc.block)) {
         parsed[["voom"]] <- NULL
         replacements$DUPCOR_BLOCK <- deparseToString(dc.block)
-        replacements$LM_OPTS <- ", block=dc.block, correlation=dc$consensus.correlation"
+        lm.args <- c("block=dc.block", "correlation=dc$consensus.correlation")
+        replacements$LM_OPTS <- paste(c("", lm.args), collapse=", ")
     } else {
         parsed[["duplicate-correlation"]] <- NULL
         replacements$LM_OPTS <- ""
@@ -311,10 +315,8 @@ runScreen <- function(
     merge.metadata <- !is.null(metadata)
     if (merge.metadata) {
         parsed[["create-common-metadata"]] <- replacePlaceholders(parsed[["create-common-metadata"]], list(COMMON_METADATA=deparseToString(metadata)))
-        parsed[["no-merge-metadata"]] <- NULL
     } else {
         parsed[["create-common-metadata"]] <- NULL
-        parsed[["merge-metadata"]] <- NULL
     }
 
     contrasts <- vector("list", length(contrast.info))
@@ -322,8 +324,11 @@ runScreen <- function(
     author.txt <- deparseToString(as.list(author))
     replacements$AUTHOR <- author.txt
 
-    consolidation <- match.arg(consolidation, several.ok=TRUE)
-    if (is.null(gene.field)) {
+    if (length(consolidation)) {
+        # I dunno, match.arg() doesn't like zero-length inputs.
+        consolidation <- match.arg(consolidation, several.ok=TRUE)
+    }
+    if (is.null(gene.field) || length(consolidation) == 0L) {
         consolidation <- character(0)
         report.summary <- FALSE
         parsed[["gene-output"]] <- NULL
@@ -335,10 +340,20 @@ runScreen <- function(
             parsed[["gene-output"]][["create-summary-indices"]] <- NULL
         }
 
+        if (!("simes" %in% consolidation)) {
+            parsed[["gene-output"]][["init-simes"]] <- NULL
+        }
+
         if (!("fry" %in% consolidation)) {
+            parsed[["gene-output"]][["init-fry"]] <- NULL
             parsed[["gene-output"]][["create-fry-indices"]] <- NULL
         } else {
-            fry.args <- c(eb.args, vapply(names(fry.args), function(n) sprintf("%s=%s", n, deparseToString(fry.args[[n]])), FUN.VALUE=""))
+            fry.args <- vapply(names(fry.args), function(n) sprintf("%s=%s", n, deparseToString(fry.args[[n]])), FUN.VALUE="")
+            fry.args <- c(fry.args, eb.args, lm.args)
+        }
+
+        if (!("holm-min" %in% consolidation)) {
+            parsed[["gene-output"]][["init-holm-min"]] <- NULL
         }
 
         if (is.null(gene.data)) {
@@ -406,8 +421,10 @@ runScreen <- function(
         if (report.summary) {
             copy[["create-summary"]] <- replacePlaceholders(
                 copy[["create-summary"]],
-                list(SUMMARY_CMDS = .generateSummaryCommands("barcode.df", "by.gene", deparseToString(summary.threshold), has.LogFC=has.LogFC))
+                list(SUMMARY_CMDS = paste(.generateSummaryCommands("barcode.df", "by.gene", deparseToString(summary.threshold), has.LogFC=has.LogFC), collapse="\n"))
             )
+        } else {
+            copy[["create-summary"]] <- NULL
         }
 
         if ("simes" %in% consolidation) {
@@ -421,7 +438,7 @@ runScreen <- function(
                 copy$simes[["gene-annotation"]] <- NULL
             }
             if (!report.summary) {
-                copy$simes[["summary"]] <- NULL
+                copy$simes[["barcode-summaries"]] <- NULL
             }
         } else {
             copy$simes <- NULL
@@ -444,7 +461,7 @@ runScreen <- function(
                 copy$fry[["gene-annotation"]] <- NULL
             }
             if (!report.summary) {
-                copy$fry[["summary"]] <- NULL
+                copy$fry[["barcode-summaries"]] <- NULL
             }
         } else {
             copy[["fry"]] <- NULL
@@ -461,14 +478,14 @@ runScreen <- function(
                 copy$`holm-min`[["gene-annotation"]] <- NULL
             }
             if (!report.summary) {
-                copy$`holm-min`[["summary"]] <- NULL
+                copy$`holm-min`[["barcode-summaries"]] <- NULL
             }
         } else {
             copy[["holm-min"]] <- NULL
         }
 
-        save.name <- paste0("save-de-", i)
-        save.names[i] <- save.name
+        save.name <- paste0("save-barcode-", i)
+        save.names <- c(save.names, save.name)
         contrasts[[i]] <- replacePlaceholders(
             copy,
             list(
@@ -482,6 +499,17 @@ runScreen <- function(
     }
 
     parsed$contrast <- contrasts
+
+    # Some final editing of the normalized SE's metadata.
+    if (is.null(subset.factor)) {
+        parsed[["subset-metadata"]] <- NULL
+    }
+    if (!merge.metadata) {
+        parsed[["merge-metadata"]] <- NULL
+    } else {
+        parsed[["no-merge-metadata"]] <- NULL
+    }
+
     parsed <- replacePlaceholders(parsed, replacements)
     writeRmd(parsed, file=fname, append=TRUE)
 
@@ -497,13 +525,16 @@ runScreen <- function(
     env <- new.env()
     compileReport(fname, env=env, skip.chunks=skip.chunks)
 
+    gene.info <- list(
+        simes=env$all.simes,
+        fry=env$all.fry,
+        `holm-min`=env$all.holm.min
+    )
+    gene.info <- gene.info[!vapply(gene.info, is.null, TRUE)]
+
     list(
         barcode=env$all.barcodes,
-        gene=list(
-            fry=env$all.fry,
-            simes=env$all.simes,
-            `holm-min`=env$all.holm.min
-        ),
+        gene=gene.info,
         normalized=env$normalized
     )
 }

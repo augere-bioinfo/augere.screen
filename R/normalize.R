@@ -12,8 +12,8 @@
 
     if (
         !is.null(norm.control.barcodes) || 
-        !is.null(norm.control.gene.field) ||
-        !is.null(norm.control.type.field)
+        (!is.null(norm.control.gene.field) && !is.null(norm.control.genes)) ||
+        (!is.null(norm.control.type.field) && !is.null(norm.control.types))
     ) {
         parsed[["norm-all"]] <- NULL
         parsed[["norm-none"]] <- NULL

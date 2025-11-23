@@ -123,12 +123,28 @@ Only used if \code{gene.field} is supplied.}
 \item{summary.threshold}{Number specifying the FDR threshold when summarizing the number of significant barcodes per gene.
 Only used if \code{report.summary=TRUE}.}
 
+\item{consolidation}{Character vector specifying the consolidation method(s) to convert per-barcode statistics into per-gene results.
+This can be zero, one or more of:
+\itemize{
+\item \code{"simes"}, which uses \code{\link[metapod]{groupedSimes}} to combine barcode-level p-values into a single per-gene p-value. 
+This is the most sensitive approach for detecting a small number of barcodes (possibly just 1) that are differentially abundant.
+Most suited for CRISPRa where few guides are expected to succeed for each gene.
+Also useful for studying sporadic off-target effects in CRISPR knockout or CRISPRi.
+\item \code{"holm-min"}, which uses \code{\link[metapod]{groupedHolmMin}} to combine barcode-level p-values into a single per-gene p-value. 
+This should be used when a minimum number/proportion of barcodes for a gene is expected to exhibit differential abundance. 
+Suitable for all CRISPR modalities but tends to be more conservative than the other methods.
+\item \code{"fry"}, which uses \code{\link[limma]{fry}} to test for differential expression across all barcodes for a gene.
+This favors consistent differences across the majority of barcodes for a given gene, and is most suited to CRISPR knockout or CRISPRi screens.
+not compatible with ANOVA-like contrasts and will ignore any \code{lfc.threshold > 0}.
+}
+Only used if \code{gene.field} is supplied.}
+
 \item{fry.args}{Named list of additional arguments to pass to \code{\link[limma]{fry}}.}
 
-\item{holm.min.n}{Integer specifying the minimum number of significant barcodes per gene when \code{method="holm"},
+\item{holm.min.n}{Integer specifying the minimum number of significant barcodes per gene when \code{consolidation="holm"},
 see the \code{min.sig.n=} in \code{?\link[metapod]{groupedHolmMin}} for details.}
 
-\item{holm.min.prop}{Integer specifying the minimum proportion of significant barcodes per gene when \code{method="holm"},
+\item{holm.min.prop}{Integer specifying the minimum proportion of significant barcodes per gene when \code{consolidation="holm"},
 see the \code{min.sig.prop=} in \code{?\link[metapod]{groupedHolmMin}} for details.}
 
 \item{assay}{String or integer specifying the assay of \code{x} containing the count matrix.}
@@ -166,22 +182,6 @@ Only used if \code{gene.field} is supplied.}
 
 \item{norm.types}{Character vector containing the control feature types in the \code{norm.type.field} column. 
 Only used if \code{norm.type.field} is supplied.}
-
-\item{method}{Character vector specifying the consolidation method(s) to convert per-barcode statistics into per-gene results.
-This can be zero, one or more of:
-\itemize{
-\item \code{"simes"}, which uses \code{\link[metapod]{groupedSimes}} to combine barcode-level p-values into a single per-gene p-value. 
-This is the most sensitive approach for detecting a small number of barcodes (possibly just 1) that are differentially abundant.
-It is appropriate for CRISPRa where very few guides are expected to succeed.
-It is also useful for identifying genes containing barcodes that exhibit sporadic off-target effects in CRISPR knockout or CRISPRi.
-\item \code{"holm-min"}, which uses \code{\link[metapod]{groupedHolmMin}} to combine barcode-level p-values into a single per-gene p-value. 
-This should be used when we expect a minimum number or proportion of barcodes to exhibit differential abundance for a given gene.
-It is suitable for CRISPR knockout screens, CRISPRi and CRISPRa.
-\item \code{"fry"}, which uses \code{\link[limma]{fry}} to test for differential expression across all barcodes for a gene.
-This tends to favor consistent differences (in the same direction!) across all barcodes for a given gene, and thus is suitable for CRISPR knockout screens or CRISPRi.
-This method mode is not compatible with ANOVA-like contrasts and will ignore any \code{lfc.threshold > 0}.
-}
-Only used if \code{gene.field} is supplied.}
 }
 \value{
 A Rmarkdown report named \code{report.Rmd} is written inside \code{output.dir} that contains the analysis commands.
@@ -193,7 +193,7 @@ Each DataFrame corresponds to a comparison/contrast where each row corresponds t
 Each DataFrame contains the following columns:
 \itemize{
 \item \code{AveExpr}, the average abundance.
-\item \code{t}, the F-statistic.
+\item \code{t}, the t-statistic.
 (For non-ANOVA-like contrasts only.)
 \item \code{F}, the F-statistic.
 (For ANOVA-like contrasts only.)
@@ -204,7 +204,7 @@ Each DataFrame contains the following columns:
 \item \code{PValue}, the p-value;
 \item \code{FDR}, the Benjamini-Hochberg-adjusted p-value.
 }
-\item \code{gene}, a named list of lists containing one entry per method in \code{method}.
+\item \code{gene}, a named list of lists containing one entry per method in \code{consolidation}.
 Each inner list contains one \link[S4Vectors]{DataFrame} per contrast where each row corresponds to a gene (not barcode). 
 Each DataFrame contains at least the following columns:
 \itemize{
@@ -257,7 +257,7 @@ Barcodes with average abundances below this threshold are discarded.
 % Fortunately, the density of barcodes at the outlier filter boundary should be so low that any biases should not be noticeable.
 
 We also use \code{\link[edgeR]{filterByExpr}} to remove low-abundance barcodes. 
-This ensures that all remaining barcodes have sufficient counts for \code{\link[limma]{voom}}, 
+This ensures that all remaining barcodes have sufficiently large counts for \code{\link[limma]{voom}}, 
 especially if the reference samples themselves are not used in the rest of the analysis.
 }
 
@@ -270,10 +270,12 @@ If more than one of these modes is provided, the union of barcodes is used.
 
 By default, we use TMM normalization (see \code{\link[edgeR]{calcNormFactors}}) on the control barcodes. 
 This avoids composition biases and provides some robustness against changes in abundance due to inadvertent biological activity.
-If \code{norm.use.tmm=FALSE}, we instead use the total sum of counts across the controls to derive normalization factors.
+If \code{norm.tmm=FALSE}, we instead use the total sum of counts across the controls to derive normalization factors.
 This can be more precise but is more sensitive to genuine changes in abundance.
 
-If no control barcodes are specified, normalization uses all barcodes that remaining after filtering.
+If no control barcodes are specified, normalization uses all barcodes that remain after filtering.
+If \code{norm.tmm=TRUE}, TMM normalization is performed on all (filtered) barcodes.
+Otherwise, the total sum of counts across all (filtered) barcodes is used.
 }
 
 \examples{

@@ -125,6 +125,7 @@ by.gene.filtered <- split(seq_along(v$genes$origin), gene.ids[v$genes$origin])
 
 # Extracting some gene-level data to store in each DataFrame.
 extra.gene.data <- SummarizedExperiment::rowData(se)[match(all.genes, gene.ids),<%= GENE_DATA_FIELDS %>,drop=FALSE]
+rownames(extra.gene.data) <- all.genes
 :END
 ```
 :END
@@ -208,11 +209,11 @@ Low-abundance barcodes are assigned `NA` statistics, to distinguish them from ba
 ```{r}
 barcode.df <- S4Vectors::DataFrame(tab)
 barcode.df <- barcode.df[match(seq_len(nrow(se)), barcode.df$origin),]
+rownames(barcode.df) <- rownames(se)
 barcode.df$origin <- NULL
 :BEGIN attach-rowdata
 barcode.df <- cbind(SummarizedExperiment::rowData(se)[,<%= ROWDATA_FIELDS %>,drop=FALSE], barcode.df)
 :END
-rownames(barcode.df) <- rownames(se)
 ```
 
 We also give nicer names to some of the columns: 
@@ -270,10 +271,12 @@ augere.core::saveResult(
 ```
 
 :BEGIN create-summary
-We compute some summary statistics to store alongside the gene-level results.
+We compute some statistics to summarize the barcode results for each gene.
+These will be stored alongside the consolidated gene-level results to assist interpretation.
 
 ```{r}
 barcode.summaries <- <%= SUMMARY_CMDS %>
+stopifnot(identical(rownames(barcode.summaries), all.genes))
 ```
 :END
 
@@ -287,13 +290,13 @@ This is the most sensitive consolidation method as it can be rejected if any bar
 ```{r}
 simes.res <- <%= SIMES_CMD %>
 simes.res <- simes.res[match(all.genes, rownames(simes.res)),,drop=FALSE]
+rownames(simes.res) <- all.genes
 :BEGIN gene-annotation
 simes.res <- cbind(extra.gene.data, simes.res)
 :END
 :BEGIN barcode-summaries
 simes.res <- cbind(simes.res, barcode.summaries)
 :END
-rownames(simes.res) <- all.genes
 ```
 
 We look at the top genes: 
@@ -362,21 +365,23 @@ fry.res <- limma::fry(
     v,
     index=by.gene.filtered,
     design=design,
-    contrast=con<%= FRY_OPTS %>
+    contrast=con,
+    sort="none"<%= FRY_OPTS %>
 )
 fry.res <- S4Vectors::DataFrame(fry.res)
 colnames(fry.res)[colnames(fry.res) == "NGenes"] <- "NumBarcodes"
 fry.res$Direction <- tolower(fry.res$Direction)
+stopifnot(identical(rownames(fry.res), names(by.gene.filtered)))
 
 fry.res <- fry.res[match(all.genes, rownames(fry.res)),,drop=FALSE]
-fry.res[is.na(fry.res$NumBarcodes)] <- 0L
+rownames(fry.res) <- all.genes
+fry.res$NumBarcodes[is.na(fry.res$NumBarcodes)] <- 0L
 :BEGIN gene-annotation
 fry.res <- cbind(extra.gene.data, fry.res)
 :END
 :BEGIN barcode-summaries
 fry.res <- cbind(fry.res, barcode.summaries)
 :END
-rownames(fry.res) <- all.genes
 ```
 
 We look at the top features after consolidation.
@@ -438,13 +443,13 @@ This guarantees that some proportion of barcodes is significant for each gene.
 ```{r}
 holm.res <- <%= HOLM_CMD %>
 holm.res <- holm.res[match(all.genes, rownames(holm.res)),,drop=FALSE]
+rownames(holm.res) <- all.genes
 :BEGIN gene-annotation
 holm.res <- cbind(extra.gene.data, holm.res)
 :END
 :BEGIN barcode-summaries
 holm.res <- cbind(holm.res, barcode.summaries)
 :END
-rownames(holm.res) <- all.genes
 ```
 
 We look at the top features after consolidation.
@@ -483,13 +488,13 @@ holm.meta <- list(
         subset=subset.meta,
 :END
         normalization=norm.meta,
-        method="holm"
+        method="holm-min"
     )
 )
 
 augere.core::saveResult(
     holm.res, 
-    file.path(result.dir, paste0("holm-", length(all.holm.min))),
+    file.path(result.dir, paste0("holm-min-", length(all.holm.min))),
 :BEGIN merge-metadata
     metadata=c(common.meta, holm.meta)
 :END
@@ -525,7 +530,13 @@ And we save it.
 norm.meta <- list(
     title='Normalized barcode data',
     authors=<%= AUTHOR %>,
-    type="summarized_experiment"
+    type="summarized_experiment",
+    summarized_experiment=list(
+:BEGIN subset-metadata
+        subset=subset.meta,
+:END
+        normalization=norm.meta
+    )
 )
 
 augere.core::saveResult(
