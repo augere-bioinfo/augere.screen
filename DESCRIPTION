@@ -19,7 +19,8 @@ Suggests:
     testthat,
     knitr,
     rmarkdown,
-    BiocStyle
+    BiocStyle,
+    SummarizedExperiment
 VignetteBuilder: knitr    
 RoxygenNote: 7.3.3
 Encoding: UTF-8

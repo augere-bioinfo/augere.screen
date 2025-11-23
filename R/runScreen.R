@@ -2,7 +2,7 @@
 #'
 #' Use \code{\link[limma]{voom}} to test for differential abundance of barcodes in a functional screen.
 #' 
-#' @param se A \link[SummarizedExperiment]{SummarizedExperiment} object containing read counts for each barcode (row) and sample (column).
+#' @param x A \link[SummarizedExperiment]{SummarizedExperiment} object containing read counts for each barcode (row) and sample (column).
 #' Alternatively, the output of \code{\link[augere.core]{wrapInput}} that refers to a SummarizedExperiment.
 #' @inheritParams augere.de::runVoom
 #' @param filter.reference.factor String specifying \code{\link[SummarizedExperiment]{colData}(se)} column that indicates whether a sample is a reference.
@@ -14,15 +14,15 @@
 #' @param filter.default Boolean indicating whether to filter barcodes using the default \pkg{edgeR} method, i.e., \code{\link[edgeR]{filterByExpr}}.
 #' If \code{TRUE} and \code{filter.reference.factor} is supplied, the default filtering is applied in addition to the reference-based filtering.
 #' Otherwise, it is applied alone. 
-#' @param norm.barcodes A named list of character vectors containing one or more sets of control barcodes.
+#' @param norm.control.barcodes A named list of character vectors containing one or more sets of control barcodes.
 #' Each vector should contain the names of barcodes, corresponding to the row names of \code{se}.
 #' The names of the vectors will be stored in the metadata.
-#' @param norm.genes A named list containing one or more sets of control genes.
+#' @param norm.control.genes A named list containing one or more sets of control genes.
 #' Each vector should contain the names of genes, corresponding to the entries of the \code{gene.field} column.
 #' The names of the vectors will be stored in the metadata.
 #' Only used if \code{gene.field} is supplied.
-#' @param norm.type.field String specifying the \code{\link[SummarizedExperiment]{rowData}(se)} column containing the feature type for each barcode.
-#' @param norm.types Character vector containing the control feature types in the \code{norm.type.field} column. 
+#' @param norm.control.type.field String specifying the \code{\link[SummarizedExperiment]{rowData}(se)} column containing the feature type for each barcode.
+#' @param norm.control.types Character vector containing the control feature types in the \code{norm.type.field} column. 
 #' Only used if \code{norm.type.field} is supplied.
 #' @param norm.tmm Boolean indicating whether TMM normalization should be used.
 #' If \code{FALSE}, normalization is instead performed using the library size for each sample.
@@ -177,6 +177,8 @@
 #' @export
 #' @import augere.core
 #' @importFrom augere.de processContrastMetadata
+#' @importFrom limma voom
+#' @importFrom edgeR calcNormFactors
 runScreen <- function( 
     x,
     groups,

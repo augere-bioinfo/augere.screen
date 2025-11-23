@@ -47,7 +47,7 @@ runScreen(
 )
 }
 \arguments{
-\item{x}{A \link[SummarizedExperiment]{SummarizedExperiment} object containing a count matrix where genes and samples are in rows and columns, respectively.
+\item{x}{A \link[SummarizedExperiment]{SummarizedExperiment} object containing read counts for each barcode (row) and sample (column).
 Alternatively, the output of \code{\link[augere.core]{wrapInput}} that refers to a SummarizedExperiment.}
 
 \item{groups}{String specifying the \code{\link[SummarizedExperiment]{colData}(x)} column containing the grouping factor of interest,
@@ -112,6 +112,20 @@ Only used if \code{filter.reference.factor} is supplied.}
 If \code{TRUE} and \code{filter.reference.factor} is supplied, the default filtering is applied in addition to the reference-based filtering.
 Otherwise, it is applied alone.}
 
+\item{norm.control.barcodes}{A named list of character vectors containing one or more sets of control barcodes.
+Each vector should contain the names of barcodes, corresponding to the row names of \code{se}.
+The names of the vectors will be stored in the metadata.}
+
+\item{norm.control.genes}{A named list containing one or more sets of control genes.
+Each vector should contain the names of genes, corresponding to the entries of the \code{gene.field} column.
+The names of the vectors will be stored in the metadata.
+Only used if \code{gene.field} is supplied.}
+
+\item{norm.control.type.field}{String specifying the \code{\link[SummarizedExperiment]{rowData}(se)} column containing the feature type for each barcode.}
+
+\item{norm.control.types}{Character vector containing the control feature types in the \code{norm.type.field} column. 
+Only used if \code{norm.type.field} is supplied.}
+
 \item{norm.tmm}{Boolean indicating whether TMM normalization should be used.
 If \code{FALSE}, normalization is instead performed using the library size for each sample.}
 
@@ -163,23 +177,6 @@ If \code{NULL}, defaults to the current user.}
 This generates the Rmarkdown report in \code{output.dir} but does not execute the analysis.}
 
 \item{save.results}{Boolean indicating whether the results should be saved to file.}
-
-\item{se}{A \link[SummarizedExperiment]{SummarizedExperiment} object containing read counts for each barcode (row) and sample (column).
-Alternatively, the output of \code{\link[augere.core]{wrapInput}} that refers to a SummarizedExperiment.}
-
-\item{norm.barcodes}{A named list of character vectors containing one or more sets of control barcodes.
-Each vector should contain the names of barcodes, corresponding to the row names of \code{se}.
-The names of the vectors will be stored in the metadata.}
-
-\item{norm.genes}{A named list containing one or more sets of control genes.
-Each vector should contain the names of genes, corresponding to the entries of the \code{gene.field} column.
-The names of the vectors will be stored in the metadata.
-Only used if \code{gene.field} is supplied.}
-
-\item{norm.type.field}{String specifying the \code{\link[SummarizedExperiment]{rowData}(se)} column containing the feature type for each barcode.}
-
-\item{norm.types}{Character vector containing the control feature types in the \code{norm.type.field} column. 
-Only used if \code{norm.type.field} is supplied.}
 }
 \value{
 A Rmarkdown report named \code{report.Rmd} is written inside \code{output.dir} that contains the analysis commands.
