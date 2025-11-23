@@ -106,16 +106,25 @@ all.fry <- list()
 :END
 ```
 
-Also defining some common variables for gene-level statistics.
+Also defining some common variables for gene-level consolidation.
 
 ```{r}
 gene.ids <- SummarizedExperiment::rowData(se)[[<%= GENE_FIELD %>]]
 all.genes <- sort(unique(gene.ids))
-:BEGIN create-gene-annotation
-extra.gene.data <- SummarizedExperiment::rowData(se)[match(all.genes, gene.ids),<%= ROW_DATA_FIELDS %>,drop=FALSE]
+:BEGIN create-summary-indices
+
+# Creating gene set indices to summarize barcode results per gene. 
+by.gene <- split(seq_along(gene.ids), factor(gene.ids, all.genes))
 :END
 :BEGIN create-fry-indices
-gene.indices <- split(seq_along(v$genes$origin), gene.ids[v$genes$origin])
+
+# Creating gene set indices after filtering, for use in fry.
+by.gene.filtered <- split(seq_along(v$genes$origin), gene.ids[v$genes$origin])
+:END
+:BEGIN create-gene-annotation
+
+# Extracting some gene-level data to store in each DataFrame.
+extra.gene.data <- SummarizedExperiment::rowData(se)[match(all.genes, gene.ids),<%= GENE_DATA_FIELDS %>,drop=FALSE]
 :END
 ```
 :END
@@ -200,10 +209,10 @@ Low-abundance barcodes are assigned `NA` statistics, to distinguish them from ba
 barcode.df <- S4Vectors::DataFrame(tab)
 barcode.df <- barcode.df[match(seq_len(nrow(se)), barcode.df$origin),]
 barcode.df$origin <- NULL
-rownames(barcode.df) <- rownames(se)
 :BEGIN attach-rowdata
 barcode.df <- cbind(SummarizedExperiment::rowData(se)[,<%= ROWDATA_FIELDS %>,drop=FALSE], barcode.df)
 :END
+rownames(barcode.df) <- rownames(se)
 ```
 
 We also give nicer names to some of the columns: 
@@ -260,6 +269,14 @@ augere.core::saveResult(
 )
 ```
 
+:BEGIN create-summary
+We compute some summary statistics to store alongside the gene-level results.
+
+```{r}
+barcode.summaries <- <%= SUMMARY_CMDS %>
+```
+:END
+
 :BEGIN simes
 ### Consolidation with Simes 
 
@@ -272,6 +289,9 @@ simes.res <- <%= SIMES_CMD %>
 simes.res <- simes.res[match(all.genes, rownames(simes.res)),,drop=FALSE]
 :BEGIN gene-annotation
 simes.res <- cbind(extra.gene.data, simes.res)
+:END
+:BEGIN barcode-summaries
+simes.res <- cbind(simes.res, barcode.summaries)
 :END
 rownames(simes.res) <- all.genes
 ```
@@ -340,19 +360,21 @@ though a low `fry` $p$-value typically requires a significant change in most bar
 ```{r}
 fry.res <- limma::fry(
     v,
-    index=gene.indices,
+    index=by.gene.filtered,
     design=design,
     contrast=con<%= FRY_OPTS %>
 )
-
-# Cleaning up the output.
 fry.res <- S4Vectors::DataFrame(fry.res)
 colnames(fry.res)[colnames(fry.res) == "NGenes"] <- "NumBarcodes"
 fry.res$Direction <- tolower(fry.res$Direction)
+
 fry.res <- fry.res[match(all.genes, rownames(fry.res)),,drop=FALSE]
 fry.res[is.na(fry.res$NumBarcodes)] <- 0L
 :BEGIN gene-annotation
 fry.res <- cbind(extra.gene.data, fry.res)
+:END
+:BEGIN barcode-summaries
+fry.res <- cbind(fry.res, barcode.summaries)
 :END
 rownames(fry.res) <- all.genes
 ```
@@ -418,6 +440,9 @@ holm.res <- <%= HOLM_CMD %>
 holm.res <- holm.res[match(all.genes, rownames(holm.res)),,drop=FALSE]
 :BEGIN gene-annotation
 holm.res <- cbind(extra.gene.data, holm.res)
+:END
+:BEGIN barcode-summaries
+holm.res <- cbind(holm.res, barcode.summaries)
 :END
 rownames(holm.res) <- all.genes
 ```

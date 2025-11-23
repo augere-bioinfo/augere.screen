@@ -30,6 +30,8 @@ runScreen(
   norm.control.types = NULL,
   norm.tmm = TRUE,
   gene.field = NULL,
+  report.summary = TRUE,
+  summary.threshold = 0.05,
   consolidation = c("simes", "fry", "holm-min"),
   fry.args = list(),
   holm.min.n = 3,
@@ -114,6 +116,12 @@ Otherwise, it is applied alone.}
 If \code{FALSE}, normalization is instead performed using the library size for each sample.}
 
 \item{gene.field}{String specifying the \code{rowData(se)} column that contains the gene identity for each barcode.}
+
+\item{report.summary}{Boolean indicating whether to report barcode-level summaries within the per-gene data frames.
+Only used if \code{gene.field} is supplied.}
+
+\item{summary.threshold}{Number specifying the FDR threshold when summarizing the number of significant barcodes per gene.
+Only used if \code{report.summary=TRUE}.}
 
 \item{fry.args}{Named list of additional arguments to pass to \code{\link[limma]{fry}}.}
 
@@ -205,6 +213,14 @@ Each DataFrame contains at least the following columns:
 \item \code{FDR}, the Benjamini-Hochberg-adjusted p-value.
 \item \code{Direction}, the overall direction of change for all barcodes of the gene.
 (For non-ANOVA-like contrasts only.)
+\item \code{NumUp}, the number of barcodes with a significant increase in abundance.
+(For non-ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
+\item \code{NumDown}, the number of barcodes with a significant decrease in abundance.
+(For non-ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
+\item \code{LogFC}, the log-fold change of the barcode with the lowest p-value.
+(For non-ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
+\item \code{NumSig}, the number of significant barcodes.
+(For ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
 }
 Only reported if \code{gene.field} is not \code{NULL}.
 \item \code{normalized}, a copy of \code{x} with normalized expression values, possibly subsetted by sample.

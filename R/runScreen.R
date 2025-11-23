@@ -42,6 +42,10 @@
 #' This method mode is not compatible with ANOVA-like contrasts and will ignore any \code{lfc.threshold > 0}.
 #' }
 #' Only used if \code{gene.field} is supplied.
+#' @param report.summary Boolean indicating whether to report barcode-level summaries within the per-gene data frames.
+#' Only used if \code{gene.field} is supplied.
+#' @param summary.threshold Number specifying the FDR threshold when summarizing the number of significant barcodes per gene.
+#' Only used if \code{report.summary=TRUE}.
 #' @param holm.min.n Integer specifying the minimum number of significant barcodes per gene when \code{method="holm"},
 #' see the \code{min.sig.n=} in \code{?\link[metapod]{groupedHolmMin}} for details.
 #' @param holm.min.prop Integer specifying the minimum proportion of significant barcodes per gene when \code{method="holm"},
@@ -80,6 +84,14 @@
 #' \item \code{FDR}, the Benjamini-Hochberg-adjusted p-value.
 #' \item \code{Direction}, the overall direction of change for all barcodes of the gene.
 #' (For non-ANOVA-like contrasts only.)
+#' \item \code{NumUp}, the number of barcodes with a significant increase in abundance.
+#' (For non-ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
+#' \item \code{NumDown}, the number of barcodes with a significant decrease in abundance.
+#' (For non-ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
+#' \item \code{LogFC}, the log-fold change of the barcode with the lowest p-value.
+#' (For non-ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
+#' \item \code{NumSig}, the number of significant barcodes.
+#' (For ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
 #' }
 #' Only reported if \code{gene.field} is not \code{NULL}.
 #' \item \code{normalized}, a copy of \code{x} with normalized expression values, possibly subsetted by sample.
@@ -190,6 +202,8 @@ runScreen <- function(
     norm.control.types = NULL,
     norm.tmm = TRUE,
     gene.field = NULL,
+    report.summary = TRUE,
+    summary.threshold = 0.05,
     consolidation = c("simes", "fry", "holm-min"),
     fry.args = list(),
     holm.min.n = 3,
@@ -311,19 +325,27 @@ runScreen <- function(
     consolidation <- match.arg(consolidation, several.ok=TRUE)
     if (is.null(gene.field)) {
         consolidation <- character(0)
+        report.summary <- FALSE
         parsed[["gene-output"]] <- NULL
+
     } else {
         replacements$GENE_FIELD <- deparseToString(gene.field)
-    }
-    if (!("fry" %in% consolidation)) {
-        parsed[["gene-output"]][["create-fry-indices"]] <- NULL
-    } else {
-        fry.args <- c(eb.args, vapply(names(fry.args), function(n) sprintf("%s=%s", n, deparseToString(fry.args[[n]])), FUN.VALUE=""))
-    }
-    if (is.null(gene.data)) {
-        parsed[["gene-output"]][["create-gene-annotation"]] <- NULL
-    } else {
-        replacements$ROW_DATA_FIELDS <- deparseToString(gene.data)
+
+        if (!report.summary) {
+            parsed[["gene-output"]][["create-summary-indices"]] <- NULL
+        }
+
+        if (!("fry" %in% consolidation)) {
+            parsed[["gene-output"]][["create-fry-indices"]] <- NULL
+        } else {
+            fry.args <- c(eb.args, vapply(names(fry.args), function(n) sprintf("%s=%s", n, deparseToString(fry.args[[n]])), FUN.VALUE=""))
+        }
+
+        if (is.null(gene.data)) {
+            parsed[["gene-output"]][["create-gene-annotation"]] <- NULL
+        } else {
+            replacements$GENE_DATA_FIELDS <- deparseToString(gene.data)
+        }
     }
 
     for (i in seq_along(contrast.info)) {
@@ -379,18 +401,27 @@ runScreen <- function(
         ### Gene-level consolidation ###
         ################################
 
-        if ("simes" %in% consolidation) {
-            simes.cmd <- .generateSimesCommands(    
-                df.name="barcode.df",
-                genes.name="gene.ids",
-                has.LogFC=current$type %in% c("versus", "covariate")
+        has.LogFC <- current$type %in% c("versus", "covariate")
+
+        if (report.summary) {
+            copy[["create-summary"]] <- replacePlaceholders(
+                copy[["create-summary"]],
+                list(SUMMARY_CMDS = .generateSummaryCommands("barcode.df", "by.gene", deparseToString(summary.threshold), has.LogFC=has.LogFC))
             )
+        }
+
+        if ("simes" %in% consolidation) {
+            simes.cmd <- .generateSimesCommands(df.name="barcode.df", genes.name="gene.ids", has.LogFC=has.LogFC)
             save.name <- paste0("save-simes-", i)
             save.names <- c(save.names, save.name)
             copy$simes <- decorate_metadata(copy$simes)
             copy$simes <- replacePlaceholders(copy$simes, list(SIMES_CMD=simes.cmd, SAVING_CHUNK_NAME=save.name), error=FALSE)
+
             if (is.null(gene.data)) {
                 copy$simes[["gene-annotation"]] <- NULL
+            }
+            if (!report.summary) {
+                copy$simes[["summary"]] <- NULL
             }
         } else {
             copy$simes <- NULL
@@ -408,27 +439,29 @@ runScreen <- function(
                 ),
                 error=FALSE
             )
+
             if (is.null(gene.data)) {
                 copy$fry[["gene-annotation"]] <- NULL
+            }
+            if (!report.summary) {
+                copy$fry[["summary"]] <- NULL
             }
         } else {
             copy[["fry"]] <- NULL
         }
 
         if ("holm-min" %in% consolidation) {
-            holm.cmd <- .generateHolmMinCommands(
-                df.name="barcode.df",
-                genes.name="gene.ids",
-                min.n=holm.min.n,
-                min.prop=holm.min.prop,
-                has.LogFC=current$type %in% c("versus", "covariate")
-            )
+            holm.cmd <- .generateHolmMinCommands(df.name="barcode.df", genes.name="gene.ids", min.n=holm.min.n, min.prop=holm.min.prop, has.LogFC=has.LogFC)
             save.name <- paste0("save-holm-", i)
             save.names <- c(save.names, save.name)
             copy$`holm-min` <- decorate_metadata(copy$`holm-min`)
             copy$`holm-min` <- replacePlaceholders(copy$`holm-min`, list(HOLM_CMD=holm.cmd, SAVING_CHUNK_NAME=save.name), error=FALSE)
+
             if (is.null(gene.data)) {
                 copy$`holm-min`[["gene-annotation"]] <- NULL
+            }
+            if (!report.summary) {
+                copy$`holm-min`[["summary"]] <- NULL
             }
         } else {
             copy[["holm-min"]] <- NULL
