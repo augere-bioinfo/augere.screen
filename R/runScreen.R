@@ -393,8 +393,8 @@ runScreen <- function(
         }
 
         meta.cmds <- processContrastMetadata(current)
-        meta.cmds[-1] <- paste0("    ", meta.cmds[-1])
-        meta.cmds[1] <- paste0("    contrast=", meta.cmds[1])
+        meta.cmds[1] <- paste0("contrast=", meta.cmds[1])
+        meta.cmds <- sprintf("%s%s", strrep(" ", 8), meta.cmds)
         meta.cmds[length(meta.cmds)] <- paste0(meta.cmds[length(meta.cmds)], ",")
 
         decorate_metadata <- function(txt) {

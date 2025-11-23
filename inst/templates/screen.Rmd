@@ -325,7 +325,7 @@ We also save them to file with some metadata.
 
 ```{r <%= SAVING_CHUNK_NAME %>}
 simes.meta <- list(
-    title=paste0(<%= CONTRAST_NAME_DEPARSED %>, "(Simes)"),
+    title=paste(<%= CONTRAST_NAME_DEPARSED %>, "(Simes)"),
     authors=<%= AUTHOR %>,
     type="differential_gene_abundance",
     differential_gene_abundance=list(
@@ -406,7 +406,7 @@ We also save them to file with some metadata.
 
 ```{r <%= SAVING_CHUNK_NAME %>}
 fry.meta <- list(
-    title=paste0(<%= CONTRAST_NAME_DEPARSED %>, "(fry)"),
+    title=paste(<%= CONTRAST_NAME_DEPARSED %>, "(fry)"),
     authors=<%= AUTHOR %>,
     type="differential_gene_abundance",
     differential_gene_abundance=list(
@@ -478,7 +478,7 @@ We also save them to file with some metadata.
 
 ```{r <%= SAVING_CHUNK_NAME %>}
 holm.meta <- list(
-    title=paste0(<%= CONTRAST_NAME_DEPARSED %>, "(Holm)"),
+    title=paste(<%= CONTRAST_NAME_DEPARSED %>, "(Holm)"),
     authors=<%= AUTHOR %>,
     type="differential_gene_abundance",
     differential_gene_abundance=list(
