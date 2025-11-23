@@ -1,0 +1,235 @@
+---
+title: Differential barcode abundance for functional screens
+author:
+- name: Aaron Lun
+  email: infinite.monkeys.with.keyboards@gmail.com
+- name: Jean-Philippe Fortin
+date: "Revised: November 24, 2025"  
+output: BiocStyle::html_document
+package: augere.screen
+vignette: >
+  %\VignetteIndexEntry{Differential abundance for functional screens}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, echo=FALSE, results="hide"}
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+self <- BiocStyle::Biocpkg("augere.screen")
+```
+
+# Overview
+
+`r self` implements a pipeline to detect differentially abundant barcodes in a functional screen.
+Given a matrix of barcode-by-sample counts, this uses `voom()` from the `r BiocStyle::Biocpkg("limma")` package to test for differences between conditions.
+It then consolidates barcode-level statistics into per-gene inferences with a variety of statistical methods.
+The pipeline also creates a self-contained Rmarkdown report that documents each step in the analysis.
+
+# Quick start
+
+First, let's mock up a dataset.
+
+```{r}
+make_mock_dataset <- function() {
+    set.seed(100)
+    mu <- 2^runif(1000, 3, 6)
+    grouping <- rep(c("A", "B", "ctrl"), each=3)
+    counts <- matrix(rnbinom(length(mu)* length(grouping), mu=mu, size=20), ncol=length(grouping))
+    rownames(counts) <- sprintf("BARCODE-%s", seq_along(mu))
+
+    library(SummarizedExperiment)
+    se <- SummarizedExperiment(list(counts=counts), colData=DataFrame(group=grouping))
+    rowData(se)$type <- "other"
+    rowData(se)$gene <- paste0("GENE-", sample(LETTERS, length(mu), replace=TRUE))
+    rowData(se)$type[1:50] <- "NEG"
+    rowData(se)$gene[1:50] <- "NEG"
+
+    se
+}
+
+se <- make_mock_dataset()
+se
+```
+
+The `runScreen()` function uses `voom()` to test for differential abundance across a comparison of interest.
+Let's say we want to compare `A` versus `B`:
+
+```{r, fig.show="hide"}
+library(augere.screen)
+output.dir <- tempfile()
+res <- runScreen(
+    se,
+    group="group",
+    comparison=c("A", "B"),
+    gene.field="gene",
+    filter.reference.factor="group",
+    filter.reference.levels="ctrl",
+    norm.control.type.field="type",
+    norm.control.types="NEG",
+    output.dir=output.dir
+)
+
+# List of tables of barcode-level differential results.
+names(res$barcode)
+res$barcode[[1]]
+
+# List of tables of gene-level statistics.
+names(res$gene)
+
+# Copy of 'se' with normalized abundance values.
+res$normalized
+```
+
+The function generates an Rmarkdown report containing (almost) all of the steps required to reproduce the analysis.
+Let's have a look at it:
+
+```{r}
+fname <- file.path(output.dir, "report.Rmd")
+cat(head(readLines(fname), 50), sep="\n")
+```
+
+The function will also save the results to file inside a `results` subdirectory, which can be loaded back into the session using the `readResult()` function:
+
+```{r}
+reloaded <- readResult(file.path(output.dir, "results", "barcode-1"))
+reloaded$x # the result itself
+str(reloaded$metadata) # along with some metadata
+```
+
+# Explaining parameters 
+
+As one might expect, the `group` and `comparisons` arguments specify to the grouping factor in `colData(se)` and the comparison(s) to be performed, respectively.
+Many of the arguments to `runScreen()` are shared with those in the `runVoom()` function in the `r BiocStyle::Biocpkg("augere.de")` package for differential expression,
+so readers are referred to the latter's vignette for more details on the parametrization of the design and contrasts.
+
+The `gene.field` argument specifies the column of `rowData(se)` that defines the gene associated with each barcode.
+This is used to consolidate the barcode-level statistics into per-gene results.
+Doing so is usually desirable as genes are the features of scientific interest, not barcodes.
+If this argument is not supplied, no consolidation is performed.
+
+The `filter.reference.factor` and `filter.reference.levels` arguments specify the reference samples in the dataset.
+These are used to quantify the abundances in the original barcode library.
+We then remove barcodes with unusually low abundances in the references, e.g., due to defects in library manufacture.
+If no reference samples are available, `runScreen()` will still use the default filtering from `r BiocStyle::Biocpkg("edgeR")` to remove low-abundance barcodes.
+
+The `norm.control.type.field` and `norm.control.types` arguments specify the control barcodes that should not change in abundance during the experiment.
+Thus, any differences in abundance are technical and can be used to quantify the scaling bias for normalization.
+In this case, our negative controls are marked as targeting `NEG`s, i.e., non-essential genes, though one could also use non-targeting controls (NTC).
+If no control barcodes are present, `runScreen()` will fall back to TMM normalization on all barcodes, assuming that the majority of barcodes do not change between conditions.
+
+# Gene-level statistics 
+
+When consolidating barcode-level information into gene-level results,
+the joint null hypothesis for each gene is that none of its barcodes are differentially abundant.
+Different methods are used by `runScreen()` to test this joint null, each of which has different statistical properties.
+
+The simplest approach involves applying Simes' method to the per-barcode $p$-values.
+This is the most sensitive approach as it can reject the joint null if a small number of barcodes (possibly just 1) are differentially abundant.
+It is most suited for CRISPRa where few guides are expected to succeed for each gene,
+and is also useful for studying sporadic off-target effects in CRISPR knockout or CRISPRi.
+
+```{r}
+names(res$gene$simes)
+res$gene$simes[[1]]
+```
+
+A more stringent approach uses an adaptation of the Holm method on the per-barcode $p$-values.
+This only rejects the joint null if a user-specified minimum number/proportion of barcodes for a gene are differentially abundant. 
+It is suitable for all CRISPR modalities but tends to be more conservative than the other methods.
+
+```{r}
+res$gene$`holm-min`[[1]]
+```
+
+Finally, we can use the `fry()` method from `r BiocStyle::Biocpkg("limma")` to perform a "barcode set test" on the barcode abundances for each gene.
+This favors consistent differences across the majority of barcodes for a given gene.
+It is most suited to CRISPR knockout or CRISPRi screens.
+
+```{r}
+res$gene$fry[[1]]
+```
+
+For each gene, we also report the number of barcodes changing in each direction, the net direction of change, and the average abundance and log-fold change of the most significant barcode.
+This can be helpful for interpreting the gene's consolidated statistics.
+
+# More output options
+
+We can set `save.results=FALSE` to instruct `runEdgeR()` to not write results to disk.
+This is more efficient if we only need the results in the current R session.
+
+Setting `dry.run=TRUE` will instruct `runEdgeR()` to only generate the Rmarkdown report but not evaluate it.
+This can be helpful for generating a draft report for further refinement.
+
+Careful readers might notice that the Rmarkdown report generated by `runScreen()` is not quite self-contained as the pipeline doesn't know how `se` was constructed.
+In the absence of this information, the report contains a placeholder `stop()` to remind the user to insert the relevant commands:
+
+```{r, echo=FALSE}
+fname <- file.path(output.dir, "report.Rmd")
+lines <- readLines(fname)
+has.stop <- grep("stop(", lines, fixed=TRUE)[1]
+cat(lines[has.stop + (-5):5], sep="\n")
+```
+
+If we know how the object was generated, we can pass this information to `runScreen()`:
+
+```{r}
+output.dry.dir <- tempfile()
+runScreen(
+    wrapInput(se, commands=as.character(body(make_mock_dataset))[-1]),
+    group="group",
+    comparison=c("A", "B"),
+    gene.field="gene",
+    filter.reference.factor="group",
+    filter.reference.levels="ctrl",
+    norm.control.type.field="type",
+    norm.control.types="NEG",
+    output.dir=output.dry.dir,
+    dry.run=TRUE
+)
+```
+
+This instructs `runScreen()` to insert the relevant commands into the report for full reproducibility:
+
+```{r, echo=FALSE}
+fname <- file.path(output.dry.dir, "report.Rmd")
+lines <- readLines(fname)
+has.loader <- grep("set.seed(", lines, fixed=TRUE)[1]
+cat(lines[has.loader + (-5):5], sep="\n")
+```
+
+We can also attach `rowData()` columns to the result tables or add custom fields to the result metadata:
+
+```{r, fig.show="hide"}
+output.custom.dir <- tempfile()
+res <- runScreen(
+    se,
+    group="group",
+    comparison=c("A", "B"),
+    gene.field="gene",
+    filter.reference.factor="group",
+    filter.reference.levels="ctrl",
+    norm.control.type.field="type",
+    norm.control.types="NEG",
+    row.data=c("gene", "type"),
+    gene.data="type",
+    metadata=list(
+        project="my_phd_project",
+        collaborators=list("anne", "bob", "charlie"),
+        data_source="https://foo.bar.com"
+    ),
+    output.dir=output.custom.dir
+)
+
+# rowData columns are now included in the barcode- and gene-level DFss.
+res$barcode[[1]]
+res$gene$simes[[1]]
+
+# The custom metadata is also saved to disk.
+str(readResult(file.path(output.custom.dir, "results", "barcode-1"))$metadata)
+```
+
+# Session information {-}
+
+```{r}
+sessionInfo()
+```

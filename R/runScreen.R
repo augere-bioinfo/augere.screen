@@ -27,19 +27,17 @@
 #' @param norm.tmm Boolean indicating whether TMM normalization should be used.
 #' If \code{FALSE}, normalization is instead performed using the library size for each sample.
 #' @param gene.field String specifying the \code{rowData(se)} column that contains the gene identity for each barcode.
+#' If \code{NULL}, consolidation of barcode-level statistics into per-gene inferences will not be performed.
 #' @param consolidation Character vector specifying the consolidation method(s) to convert per-barcode statistics into per-gene results.
 #' This can be zero, one or more of:
 #' \itemize{
 #' \item \code{"simes"}, which uses \code{\link[metapod]{groupedSimes}} to combine barcode-level p-values into a single per-gene p-value. 
 #' This is the most sensitive approach for detecting a small number of barcodes (possibly just 1) that are differentially abundant.
-#' Most suited for CRISPRa where few guides are expected to succeed for each gene.
-#' Also useful for studying sporadic off-target effects in CRISPR knockout or CRISPRi.
 #' \item \code{"holm-min"}, which uses \code{\link[metapod]{groupedHolmMin}} to combine barcode-level p-values into a single per-gene p-value. 
 #' This should be used when a minimum number/proportion of barcodes for a gene is expected to exhibit differential abundance. 
-#' Suitable for all CRISPR modalities but tends to be more conservative than the other methods.
-#' \item \code{"fry"}, which uses \code{\link[limma]{fry}} to test for differential expression across all barcodes for a gene.
-#' This favors consistent differences across the majority of barcodes for a given gene, and is most suited to CRISPR knockout or CRISPRi screens.
-#' not compatible with ANOVA-like contrasts and will ignore any \code{lfc.threshold > 0}.
+#' \item \code{"fry"}, which uses \code{\link[limma]{fry}} to test for differential abundance across all barcodes for a gene.
+#' This favors consistent differences across the majority of barcodes for a given gene.
+#' However, it is not compatible with ANOVA-like contrasts and will ignore any \code{lfc.threshold > 0}.
 #' }
 #' Only used if \code{gene.field} is supplied.
 #' @param report.summary Boolean indicating whether to report barcode-level summaries within the per-gene data frames.
@@ -94,7 +92,7 @@
 #' (For ANOVA-like contrasts only, when \code{report.summary=TRUE}.)
 #' }
 #' Only reported if \code{gene.field} is not \code{NULL}.
-#' \item \code{normalized}, a copy of \code{x} with normalized expression values, possibly subsetted by sample.
+#' \item \code{normalized}, a copy of \code{x} with normalized abundance values, possibly subsetted by sample.
 #' This contains:
 #' \itemize{
 #' \item \code{lib.size} and \code{norm.factors} columns in its \code{\link[SummarizedExperiment]{colData}},
