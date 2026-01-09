@@ -20,14 +20,24 @@ self <- BiocStyle::Biocpkg("augere.screen")
 
 # Overview
 
-`r self` implements a pipeline to detect differentially abundant barcodes in a functional screen.
+`r self` implements an [**augere** pipeline](https://github.com/augere-bioinfo) to detect differentially abundant barcodes in a functional screen.
 Given a matrix of barcode-by-sample counts, this uses `voom()` from the `r BiocStyle::Biocpkg("limma")` package to test for differences between conditions.
 It then consolidates barcode-level statistics into per-gene inferences with a variety of statistical methods.
 The pipeline also creates a self-contained Rmarkdown report that documents each step in the analysis.
 
 # Quick start
 
-First, let's mock up a dataset.
+To install this package, follow the usual [instructions for Bioconductor](https://bioconductor.org/install):
+
+```r
+install.packages("BiocManager") # if not already available
+BiocManager::install("augere.screen")
+```
+
+Now let's mock up a dataset from a functional screen.
+This contains a count matrix of barcode abundances, where each row is a barcode and each column is a sample.
+Each barcode is associated to a target gene via a 1:many mapping.
+Some barcodes are also negative controls, i.e., they do not target any gene.
 
 ```{r}
 make_mock_dataset <- function() {
