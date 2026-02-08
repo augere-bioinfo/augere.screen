@@ -1,6 +1,6 @@
 Package: augere.screen
-Version: 0.99.0
-Date: 2025-11-12
+Version: 0.99.1
+Date: 2026-02-08
 Title: Automatic Generation of Functional Screen Analyses
 Description:
     Implements pipelines for generating functional screen analysis reports in the augere framework.
